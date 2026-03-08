@@ -2,6 +2,17 @@
 
 Pomodoro zamanlayıcı ve görev yöneticisi. React Native (Expo) ile geliştirilmiştir.
 
+## Yeni Ozellikler (v1.1.0)
+
+- Gorevlere `Yuksek / Orta / Dusuk` oncelik atama
+- Hizli gorev sablonlari ile tek dokunusla gorev taslagi ekleme
+- Ayni aktif gorevi tekrar eklemeyi engelleyen dogrulama
+- Zamanlayici ayarlarinin cihazda kalici saklanmasi
+- Uygulama ici `Bilgi` sekmesi:
+    - Hakkimizda
+    - Gizlilik ozeti
+    - Tum yerel verileri sifirlama aksiyonu
+
 ## Kurulum
 
 ```bash
@@ -36,6 +47,7 @@ OYUN1/
 └── docs/                           → Dokümantasyon
     ├── PLAY_STORE_HAZIRLIGI.md     → Store listing metinleri
     ├── VERI_GUVENLIGI_FORMU.md     → Data Safety form yanıtları
+    ├── HAKKIMIZDA.md               → Hakkımızda ve uyum özeti
     ├── GIZLILIK_POLITIKASI.md      → Privacy Policy
     ├── ASSETS_KILAVUZU.md          → İkon & splash screen rehberi
     └── YAYINLAMA_KILAVUZU.md       → Play Store yayınlama rehberi

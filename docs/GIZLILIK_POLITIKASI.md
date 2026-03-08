@@ -42,12 +42,17 @@ Uygulama, işlevselliği sağlamak amacıyla aşağıdaki verileri **yalnızca c
 - Üçüncü taraflarla **paylaşılmaz**.
 - Uygulama kaldırıldığında otomatik olarak **silinir**.
 - Cihaz ayarlarından uygulama verilerini temizleyerek manuel olarak silinebilir.
+- Uygulama içinden **Bilgi > Tüm Yerel Verileri Sıfırla** adımıyla tek dokunuşla silinebilir.
 
 ---
 
 ## 4. Üçüncü Taraf Hizmetler
 
-ZenFocus, **hiçbir üçüncü taraf hizmeti, SDK veya kütüphane** kullanmaz:
+ZenFocus, **kişisel veri işleyen veya uzaktaki sunuculara veri aktaran üçüncü taraf servisler kullanmaz**.
+
+Kullanılan teknik kütüphaneler yalnızca uygulamanın cihaz üzerinde çalışması içindir (React Native / Expo runtime paketleri) ve bu kullanım, kullanıcı verisinin üçüncü taraflara iletildiği anlamına gelmez.
+
+Uygulamada aşağıdakiler **yoktur**:
 
 - ❌ Google Analytics / Firebase Analytics
 - ❌ Facebook SDK

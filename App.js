@@ -36,7 +36,7 @@
  * ============================================================================
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -54,11 +54,11 @@ import {
   Vibration,
   KeyboardAvoidingView,
   ScrollView,
+  Linking,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { Audio } from 'expo-av';
 
 // ============================================================================
 // SABITLER
@@ -71,11 +71,39 @@ const STORAGE_KEYS = {
   SETTINGS: '@zenfocus_settings',
 };
 
+const EMPTY_STATS = {
+  completedPomodoros: 0,
+  totalFocusMinutes: 0,
+  completedTasks: 0,
+};
+
 // Pomodoro varsayılan süreleri (saniye)
 const DEFAULT_WORK_TIME = 25 * 60;       // 25 dakika
 const DEFAULT_SHORT_BREAK = 5 * 60;      // 5 dakika
 const DEFAULT_LONG_BREAK = 15 * 60;      // 15 dakika
 const POMODOROS_BEFORE_LONG = 4;
+
+const DEFAULT_TIMER_SETTINGS = {
+  workDuration: 25,
+  shortBreakDuration: 5,
+  longBreakDuration: 15,
+};
+
+const QUICK_TASK_TEMPLATES = [
+  { key: 'plan', label: 'Gun Plani', text: 'Gunluk calisma planini yaz', priority: 'high' },
+  { key: 'mail', label: 'E-Posta', text: 'Onemli e-postalari yanitla', priority: 'medium' },
+  { key: 'review', label: 'Kontrol', text: 'Bugun tamamlanan gorevleri gozden gecir', priority: 'low' },
+];
+
+const PRIORITY_META = {
+  high: { label: 'Yuksek', color: '#ff6b6b' },
+  medium: { label: 'Orta', color: '#ffb347' },
+  low: { label: 'Dusuk', color: '#00d4aa' },
+};
+
+const PRIVACY_POLICY_URL = 'https://example.com/zenfocus-privacy';
+
+const IN_APP_PRIVACY_SUMMARY = `ZenFocus veri toplamaz.\n\nToplanan veri: Yok\nPaylasilan veri: Yok\nIzleme/analitik: Yok\nReklam kimligi kullanimi: Yok\n\nSadece cihazinizda saklanan yerel veriler:\n- Gorevler\n- Pomodoro istatistikleri\n- Zamanlayici ayarlari\n\nYerel veriler uygulama ici 'Tum Verileri Sifirla' adimi ile veya uygulamayi kaldirarak silinebilir.`;
 
 // Renk paleti - Dark Glassmorphism
 const COLORS = {
@@ -126,6 +154,15 @@ const getToday = () => {
 };
 
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+
+const formatHourMinute = (isoDate) => {
+  if (!isoDate) return '--:--';
+  const d = new Date(isoDate);
+  if (Number.isNaN(d.getTime())) return '--:--';
+  const hh = d.getHours().toString().padStart(2, '0');
+  const mm = d.getMinutes().toString().padStart(2, '0');
+  return `${hh}:${mm}`;
+};
 
 // ============================================================================
 // GLASSMORPHISM KART BİLEŞENİ
@@ -213,6 +250,7 @@ const TabBar = ({ activeTab, onTabChange }) => {
     { key: 'timer', icon: '⏱', label: 'Zamanlayıcı' },
     { key: 'tasks', icon: '📋', label: 'Görevler' },
     { key: 'stats', icon: '📊', label: 'İstatistik' },
+    { key: 'info', icon: '🛡', label: 'Bilgi' },
   ];
 
   return (
@@ -258,13 +296,50 @@ const PomodoroTimer = ({ onPomodoroComplete, todayStats, setTodayStats }) => {
   const [mode, setMode] = useState('work'); // 'work', 'shortBreak', 'longBreak'
   const [pomodoroCount, setPomodoroCount] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
-  const [workDuration, setWorkDuration] = useState(25);
-  const [shortBreakDuration, setShortBreakDuration] = useState(5);
-  const [longBreakDuration, setLongBreakDuration] = useState(15);
+  const [workDuration, setWorkDuration] = useState(DEFAULT_TIMER_SETTINGS.workDuration);
+  const [shortBreakDuration, setShortBreakDuration] = useState(DEFAULT_TIMER_SETTINGS.shortBreakDuration);
+  const [longBreakDuration, setLongBreakDuration] = useState(DEFAULT_TIMER_SETTINGS.longBreakDuration);
 
   const intervalRef = useRef(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const glowAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    loadTimerSettings();
+  }, []);
+
+  const loadTimerSettings = async () => {
+    try {
+      const raw = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);
+      const parsed = raw ? JSON.parse(raw) : {};
+      const timerSettings = parsed?.timerSettings || {};
+      const merged = {
+        ...DEFAULT_TIMER_SETTINGS,
+        ...timerSettings,
+      };
+      setWorkDuration(merged.workDuration);
+      setShortBreakDuration(merged.shortBreakDuration);
+      setLongBreakDuration(merged.longBreakDuration);
+      setTimeLeft(merged.workDuration * 60);
+      setTotalTime(merged.workDuration * 60);
+    } catch (e) {
+      console.log('Timer ayar yukleme hatasi:', e);
+    }
+  };
+
+  const persistTimerSettings = async (nextSettings) => {
+    try {
+      const raw = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);
+      const parsed = raw ? JSON.parse(raw) : {};
+      const updated = {
+        ...parsed,
+        timerSettings: nextSettings,
+      };
+      await AsyncStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updated));
+    } catch (e) {
+      console.log('Timer ayar kaydetme hatasi:', e);
+    }
+  };
 
   // Nabız animasyonu
   useEffect(() => {
@@ -572,6 +647,11 @@ const PomodoroTimer = ({ onPomodoroComplete, todayStats, setTodayStats }) => {
 
             <TouchableOpacity
               onPress={() => {
+                persistTimerSettings({
+                  workDuration,
+                  shortBreakDuration,
+                  longBreakDuration,
+                });
                 setShowSettings(false);
                 if (!isRunning) {
                   switchMode(mode);
@@ -601,6 +681,7 @@ const TaskList = ({ todayStats, setTodayStats }) => {
   const [newTaskText, setNewTaskText] = useState('');
   const [editingTask, setEditingTask] = useState(null);
   const [editText, setEditText] = useState('');
+  const [selectedPriority, setSelectedPriority] = useState('medium');
   const [filter, setFilter] = useState('all'); // 'all', 'active', 'completed'
 
   // Görevleri yükle
@@ -629,21 +710,45 @@ const TaskList = ({ todayStats, setTodayStats }) => {
   };
 
   const addTask = async () => {
-    if (!newTaskText.trim()) return;
+    const normalizedText = newTaskText.trim();
+    if (!normalizedText) return;
+
+    if (normalizedText.length > 120) {
+      Alert.alert('Gorev uzun', 'Lutfen gorev metnini 120 karakterin altinda tutun.');
+      return;
+    }
+
+    const duplicateExists = tasks.some(
+      (t) => !t.completed && t.text.toLowerCase() === normalizedText.toLowerCase()
+    );
+
+    if (duplicateExists) {
+      Alert.alert('Ayni gorev var', 'Ayni metinde aktif bir gorev zaten listede.');
+      return;
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     const newTask = {
       id: generateId(),
-      text: newTaskText.trim(),
+      text: normalizedText,
       completed: false,
       createdAt: new Date().toISOString(),
       date: getToday(),
+      priority: selectedPriority,
     };
 
     const updatedTasks = [newTask, ...tasks];
     setTasks(updatedTasks);
     await saveTasks(updatedTasks);
     setNewTaskText('');
+    setSelectedPriority('medium');
+  };
+
+  const applyTemplate = (template) => {
+    setNewTaskText(template.text);
+    setSelectedPriority(template.priority);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const toggleTask = async (taskId) => {
@@ -668,7 +773,11 @@ const TaskList = ({ todayStats, setTodayStats }) => {
           setTodayStats(newStats);
           saveStatsToStorage(newStats);
         }
-        return { ...t, completed: !t.completed };
+        return {
+          ...t,
+          completed: !t.completed,
+          completedAt: !wasCompleted ? new Date().toISOString() : null,
+        };
       }
       return t;
     });
@@ -731,10 +840,17 @@ const TaskList = ({ todayStats, setTodayStats }) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
+  const priorityRank = { high: 0, medium: 1, low: 2 };
+
   const filteredTasks = tasks.filter((t) => {
     if (filter === 'active') return !t.completed;
     if (filter === 'completed') return t.completed;
     return true;
+  }).sort((a, b) => {
+    if (!a.completed && !b.completed && a.priority !== b.priority) {
+      return (priorityRank[a.priority] ?? 1) - (priorityRank[b.priority] ?? 1);
+    }
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
 
   const todayTasks = filteredTasks.filter((t) => t.date === getToday());
@@ -768,11 +884,31 @@ const TaskList = ({ todayStats, setTodayStats }) => {
             </TouchableOpacity>
           </View>
         ) : (
-          <TouchableOpacity onLongPress={() => startEditing(item)} activeOpacity={0.8}>
-            <Text style={[styles.taskText, item.completed && styles.taskTextCompleted]}>
-              {item.text}
-            </Text>
-          </TouchableOpacity>
+          <View>
+            <TouchableOpacity onLongPress={() => startEditing(item)} activeOpacity={0.8}>
+              <Text style={[styles.taskText, item.completed && styles.taskTextCompleted]}>
+                {item.text}
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.taskMetaRow}>
+              <View
+                style={[
+                  styles.priorityBadge,
+                  { borderColor: PRIORITY_META[item.priority || 'medium'].color },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.priorityBadgeText,
+                    { color: PRIORITY_META[item.priority || 'medium'].color },
+                  ]}
+                >
+                  {PRIORITY_META[item.priority || 'medium'].label}
+                </Text>
+              </View>
+              <Text style={styles.taskTimeText}>{formatHourMinute(item.createdAt)}</Text>
+            </View>
+          </View>
         )}
       </View>
 
@@ -811,6 +947,52 @@ const TaskList = ({ todayStats, setTodayStats }) => {
           </LinearGradient>
         </TouchableOpacity>
       </GlassCard>
+
+      <View style={styles.priorityRow}>
+        {[
+          { key: 'high', label: 'Yuksek' },
+          { key: 'medium', label: 'Orta' },
+          { key: 'low', label: 'Dusuk' },
+        ].map((p) => (
+          <TouchableOpacity
+            key={p.key}
+            onPress={() => setSelectedPriority(p.key)}
+            style={[
+              styles.prioritySelectBtn,
+              selectedPriority === p.key && styles.prioritySelectBtnActive,
+            ]}
+            activeOpacity={0.8}
+          >
+            <Text
+              style={[
+                styles.prioritySelectText,
+                selectedPriority === p.key && {
+                  color: PRIORITY_META[p.key].color,
+                },
+              ]}
+            >
+              {p.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.templateRow}
+      >
+        {QUICK_TASK_TEMPLATES.map((template) => (
+          <TouchableOpacity
+            key={template.key}
+            style={styles.templateChip}
+            onPress={() => applyTemplate(template)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.templateChipText}>{template.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
 
       {/* Filtre butonları */}
       <View style={styles.filterRow}>
@@ -1063,15 +1245,93 @@ const StatsScreen = ({ todayStats }) => {
 };
 
 // ============================================================================
+// BILGI VE GIZLILIK BILESENI
+// ============================================================================
+const InfoScreen = ({ onResetData }) => {
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
+
+  const openPolicyUrl = async () => {
+    if (PRIVACY_POLICY_URL.includes('example.com')) {
+      Alert.alert('URL Guncelle', 'Gizlilik politikasi URL alanini gercek link ile guncelleyin.');
+      return;
+    }
+
+    try {
+      const canOpen = await Linking.canOpenURL(PRIVACY_POLICY_URL);
+      if (canOpen) {
+        await Linking.openURL(PRIVACY_POLICY_URL);
+      } else {
+        Alert.alert('Baglanti acilamadi', 'Gizlilik politikasi baglantisi acilamadi.');
+      }
+    } catch (e) {
+      console.log('Policy URL acma hatasi:', e);
+    }
+  };
+
+  return (
+    <ScrollView style={styles.infoContainer} showsVerticalScrollIndicator={false}>
+      <Text style={styles.infoTitle}>🛡 Bilgi ve Gizlilik</Text>
+
+      <GlassCard style={styles.infoCard} intensity="medium">
+        <Text style={styles.infoCardTitle}>ZenFocus Hakkinda</Text>
+        <Text style={styles.infoText}>Surum: 1.1.0</Text>
+        <Text style={styles.infoText}>Model: Cevrimdisi Pomodoro + Gorev yonetimi</Text>
+        <Text style={styles.infoText}>Veri aktarimi: Yok</Text>
+      </GlassCard>
+
+      <GlassCard style={styles.infoCard} intensity="medium">
+        <Text style={styles.infoCardTitle}>Google Play Uyum Ozeti</Text>
+        <Text style={styles.infoBullet}>• Kisisel veri toplanmaz ve paylasilmaz.</Text>
+        <Text style={styles.infoBullet}>• Reklam, takip SDK'si ve analitik kullanilmaz.</Text>
+        <Text style={styles.infoBullet}>• Tum veriler cihazda yerel olarak tutulur.</Text>
+        <Text style={styles.infoBullet}>• Kullanici tum verileri tek tusla sifirlayabilir.</Text>
+      </GlassCard>
+
+      <View style={styles.infoButtonGroup}>
+        <TouchableOpacity style={styles.infoBtn} onPress={() => setShowPolicyModal(true)}>
+          <Text style={styles.infoBtnText}>Uygulama Ici Gizlilik Ozeti</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.infoBtn} onPress={openPolicyUrl}>
+          <Text style={styles.infoBtnText}>Web Gizlilik Politikasi Ac</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={onResetData} activeOpacity={0.85}>
+          <LinearGradient colors={COLORS.gradientOrange} style={styles.resetDataBtn}>
+            <Text style={styles.resetDataBtnText}>Tum Yerel Verileri Sifirla</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+
+      <View style={{ height: 100 }} />
+
+      <Modal visible={showPolicyModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <GlassCard style={styles.settingsModal} intensity="medium">
+            <Text style={styles.settingsTitle}>Gizlilik Ozeti</Text>
+            <ScrollView style={styles.policyScrollArea}>
+              <Text style={styles.policyText}>{IN_APP_PRIVACY_SUMMARY}</Text>
+            </ScrollView>
+            <TouchableOpacity
+              onPress={() => setShowPolicyModal(false)}
+              style={styles.infoBtn}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.infoBtnText}>Kapat</Text>
+            </TouchableOpacity>
+          </GlassCard>
+        </View>
+      </Modal>
+    </ScrollView>
+  );
+};
+
+// ============================================================================
 // ANA UYGULAMA BİLEŞENİ
 // ============================================================================
 export default function App() {
   const [activeTab, setActiveTab] = useState('timer');
-  const [todayStats, setTodayStats] = useState({
-    completedPomodoros: 0,
-    totalFocusMinutes: 0,
-    completedTasks: 0,
-  });
+  const [todayStats, setTodayStats] = useState(EMPTY_STATS);
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
@@ -1103,6 +1363,36 @@ export default function App() {
     setActiveTab(tab);
   };
 
+  const resetAllLocalData = () => {
+    Alert.alert(
+      'Tum verileri sifirla',
+      'Gorevler, istatistikler ve ayarlar cihazinizdan silinecek. Bu islem geri alinamaz.',
+      [
+        { text: 'Iptal', style: 'cancel' },
+        {
+          text: 'Sifirla',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await AsyncStorage.multiRemove([
+                STORAGE_KEYS.TASKS,
+                STORAGE_KEYS.STATS,
+                STORAGE_KEYS.SETTINGS,
+              ]);
+              setTodayStats(EMPTY_STATS);
+              setActiveTab('timer');
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              Alert.alert('Tamamlandi', 'Tum yerel veriler basariyla temizlendi.');
+            } catch (e) {
+              console.log('Veri sifirlama hatasi:', e);
+              Alert.alert('Hata', 'Veriler sifirlanirken bir hata olustu.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case 'timer':
@@ -1119,9 +1409,18 @@ export default function App() {
         );
       case 'stats':
         return <StatsScreen todayStats={todayStats} />;
+      case 'info':
+        return <InfoScreen onResetData={resetAllLocalData} />;
       default:
         return null;
     }
+  };
+
+  const tabSubtitle = {
+    timer: 'Minimalist Verimlilik',
+    tasks: 'Planla ve Tamamla',
+    stats: 'Ilerlemeni Takip Et',
+    info: 'Hakkimizda ve Gizlilik',
   };
 
   return (
@@ -1137,7 +1436,7 @@ export default function App() {
           {/* Başlık */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>ZenFocus</Text>
-            <Text style={styles.headerSubtitle}>Minimalist Verimlilik</Text>
+            <Text style={styles.headerSubtitle}>{tabSubtitle[activeTab]}</Text>
           </View>
 
           {/* İçerik */}
@@ -1499,7 +1798,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 6,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   addTaskInput: {
     flex: 1,
@@ -1518,6 +1817,45 @@ const styles = StyleSheet.create({
   addTaskBtnText: {
     fontSize: 24,
     color: COLORS.textPrimary,
+    fontWeight: '600',
+  },
+  priorityRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  prioritySelectBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: COLORS.glassLight,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  prioritySelectBtnActive: {
+    borderColor: COLORS.glassHighlight,
+    backgroundColor: COLORS.glassMedium,
+  },
+  prioritySelectText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontWeight: '700',
+  },
+  templateRow: {
+    paddingBottom: 10,
+    gap: 8,
+  },
+  templateChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 14,
+    backgroundColor: COLORS.glassLight,
+    borderWidth: 1,
+    borderColor: COLORS.glassBorder,
+  },
+  templateChipText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
     fontWeight: '600',
   },
 
@@ -1617,6 +1955,28 @@ const styles = StyleSheet.create({
   taskTextCompleted: {
     textDecorationLine: 'line-through',
     color: COLORS.textMuted,
+  },
+  taskMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  priorityBadge: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    backgroundColor: COLORS.glassLight,
+  },
+  priorityBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  taskTimeText: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    fontWeight: '500',
   },
   taskDeleteBtn: {
     padding: 8,
@@ -1810,6 +2170,76 @@ const styles = StyleSheet.create({
     width: 1,
     height: 30,
     backgroundColor: COLORS.glassBorder,
+  },
+
+  // === BILGI VE GIZLILIK ===
+  infoContainer: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  infoTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    marginBottom: 16,
+  },
+  infoCard: {
+    padding: 18,
+    marginBottom: 12,
+  },
+  infoCardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    marginBottom: 10,
+  },
+  infoText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginBottom: 6,
+    lineHeight: 19,
+  },
+  infoBullet: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginBottom: 7,
+    lineHeight: 20,
+  },
+  infoButtonGroup: {
+    gap: 10,
+    marginTop: 6,
+  },
+  infoBtn: {
+    paddingVertical: 13,
+    borderRadius: 12,
+    backgroundColor: COLORS.glassMedium,
+    borderWidth: 1,
+    borderColor: COLORS.glassBorder,
+    alignItems: 'center',
+  },
+  infoBtnText: {
+    fontSize: 14,
+    color: COLORS.textPrimary,
+    fontWeight: '700',
+  },
+  resetDataBtn: {
+    paddingVertical: 13,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  resetDataBtnText: {
+    fontSize: 14,
+    color: COLORS.textPrimary,
+    fontWeight: '700',
+  },
+  policyScrollArea: {
+    maxHeight: SCREEN_HEIGHT * 0.45,
+    marginBottom: 12,
+  },
+  policyText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    lineHeight: 21,
   },
 
   // === MOTİVASYON ===
