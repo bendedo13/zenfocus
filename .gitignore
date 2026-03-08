@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.expo/
+*.tgz
+*.log
+npm-debug.log*
+web-build/
