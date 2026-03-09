@@ -1,8 +1,8 @@
 {
   "expo": {
-        "cli": {
-          "appVersionSource": "auto"
-        },
+    "cli": {
+      "appVersionSource": "auto"
+    },
     "name": "ZenFocus: Minimalist Verimlilik Sayacı",
     "slug": "zenfocus-minimalist-timer",
     "version": "1.1.0",
@@ -37,13 +37,17 @@
     },
     "plugins": [],
     "extra": {
-      "privacyPolicyUrl": "https://example.com/zenfocus-privacy"
+      "privacyPolicyUrl": "https://example.com/zenfocus-privacy",
+      "eas": {
+        "projectId": "146e3a80-65f6-48cc-800b-d3fcf150517c"
+      }
     },
     "runtimeVersion": {
       "policy": "sdkVersion"
     },
     "updates": {
       "url": ""
-    }
+    },
+    "owner": "benalanxx"
   }
 }
