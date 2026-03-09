@@ -3,7 +3,9 @@
     "production": {
       "android": {
         "buildType": "app-bundle",
-        "gradleCommand": ":app:bundleRelease"
+        "gradleCommand": ":app:bundleRelease",
+        "minify": true,
+        "shrink": true
       }
     },
     "preview": {
